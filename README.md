@@ -101,7 +101,6 @@ FCN-Pricing-Tool/
 | ------------------------ | --------- | ------------------------------------- |
 | **Risk-Free Rate** | 0–20%    | Annual rate for discounting           |
 | **# Simulations**  | 500–100k | Monte Carlo paths (more = less noise) |
-| **Proxy**          | optional  | HTTP proxy for Yahoo Finance access   |
 
 ---
 

@@ -2,7 +2,6 @@
 FCN Pricing Simulation Tool — Flask Backend
 
 Fetches historical stock prices from Yahoo Finance v8 chart API.
-Proxy: set via the "Proxy" input box, or HTTPS_PROXY / HTTP_PROXY env vars.
 """
 import logging
 import os
@@ -28,18 +27,6 @@ CORS(app)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Proxy
-# ---------------------------------------------------------------------------
-_PROXY_URL = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or ""
-
-
-def _get_proxies(override: str = "") -> dict | None:
-    url = override.strip() or _PROXY_URL
-    if not url:
-        return None
-    return {"http": url, "https": url}
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +54,7 @@ _QUERY_HOSTS = [
 ]
 
 
-def _build_session(proxy: str = "", attempt: int = 0) -> requests.Session:
+def _build_session(attempt: int = 0) -> requests.Session:
     """Create a requests.Session that looks like a real browser."""
     s = requests.Session()
 
@@ -101,10 +88,6 @@ def _build_session(proxy: str = "", attempt: int = 0) -> requests.Session:
     )
     s.mount("https://", adapter)
 
-    proxies = _get_proxies(proxy)
-    if proxies:
-        s.proxies.update(proxies)
-
     return s
 
 
@@ -121,7 +104,6 @@ _RANGE_MAP = {
 def _fetch_from_yahoo(
     ticker: str,
     period: str = "1y",
-    proxy: str = "",
     max_retries: int = 4,
 ):
     """Fetch historical prices from Yahoo Finance v8 chart API.
@@ -154,7 +136,7 @@ def _fetch_from_yahoo(
             "events": "div,splits",
         }
 
-        session = _build_session(proxy, attempt)
+        session = _build_session(attempt)
 
         try:
             logger.info("Fetching %s (%s) via %s, attempt %d/%d",
@@ -255,13 +237,12 @@ def docs():
 def history():
     ticker = request.args.get("ticker", "").strip()
     period = request.args.get("period", "1y").strip()
-    proxy = request.args.get("proxy", "").strip()
 
     if not ticker:
         return jsonify({"error": "Missing ticker parameter"}), 400
 
     try:
-        result = _fetch_from_yahoo(ticker, period, proxy=proxy)
+        result = _fetch_from_yahoo(ticker, period)
         return jsonify(result)
     except Exception as e:
         logger.exception("Error fetching %s", ticker)
