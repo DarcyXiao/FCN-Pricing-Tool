@@ -127,14 +127,15 @@ FCN-Pricing-Tool/
 
 ## Methodology (Summary)
 
-1. **Data**: Fetch ~252 daily closes from Yahoo Finance → compute annualized volatility & correlation matrix from log returns.
-2. **Simulation**: Correlated Geometric Brownian Motion via Cholesky decomposition:
+1. **Data** — Fetch ~252 daily closes from Yahoo Finance → compute annualized volatility & correlation matrix from log returns.
+2. **Simulation** — Correlated Geometric Brownian Motion via Cholesky decomposition:
 
-   $$
-   \Sigma = LL^T, \quad Z_{\text{corr}} = LZ, \quad S_i(t+dt) = S_i(t) \cdot \exp\!\Big((r - \tfrac{1}{2}\sigma_i^2)dt + \sigma_i\sqrt{dt} \cdot Z_{\text{corr}}[i]\Big)
-   $$
-3. **Payoff**: Evaluate KO/KI barriers daily on worst-performing asset. Discount all cash flows at risk-free rate.
-4. **Fair Coupon**: Bisection (binary search) on $FV(c)$ — since FV is monotonic in coupon $c$, converge to $c^*$ where $FV(c^*) = 100\%$ in ~13 iterations.
+$$
+\Sigma = LL^T, \qquad Z_{\text{corr}} = LZ, \qquad S_i(t+dt) = S_i(t) \cdot \exp\!\Big((r - \tfrac{1}{2}\sigma_i^2)\,dt + \sigma_i\sqrt{dt} \cdot Z_{\text{corr}}[i]\Big)
+$$
+
+3. **Payoff** — Evaluate KO/KI barriers daily on the worst-performing asset. Discount all cash flows at the risk-free rate.
+4. **Fair Coupon** — Bisection (binary search) on $FV(c)$. Since $FV(c)$ is monotonic in $c$, converge to $c^*$ where $FV(c^*) = 100\\%$ in $\approx 13$ iterations.
 
 Full details: click **📖 Methodology & Documentation** button in the app.
 
