@@ -105,22 +105,28 @@ FCN-Pricing-Tool/
 
 ---
 
-## Typical Results
+## Payoff Scenarios
 
-```
-┌──────────────────────────────────────────────────┐
-│  ① Knock-Out (KO)                                │
-│  All assets ≥ KO barrier → early redemption      │
-│  Payoff = 100 × (1 + accrued coupon) × e^(-rT)   │
-├──────────────────────────────────────────────────┤
-│  ② Safe Maturity                                  │
-│  No KO; no KI, or KI but worst ≥ Strike           │
-│  Payoff = 100 × (1 + full coupon) × e^(-rT)      │
-├──────────────────────────────────────────────────┤
-│  ③ Delivery (Physical Share)                      │
-│  KI breached AND worst asset < Strike             │
-│  Payoff = (coupon + 100 × worst/Strike) × e^(-rT) │
-└──────────────────────────────────────────────────┘
+An FCN has three mutually exclusive outcomes, evaluated on the **worst-performing** asset in the basket:
+
+| Scenario | Trigger | Payoff at event time $T$ |
+|---|---|---|
+| **① Knock-Out** | **All** assets $\ge$ KO barrier on any day after KO Start | $100 \cdot \bigl(1 + c \cdot \frac{T-5}{252}\bigr) \cdot e^{-rT/252}$ |
+| **② Safe Maturity** | No KO; and either no KI, or KI but worst $\ge$ Strike | $100 \cdot \bigl(1 + c \cdot \frac{T_{\text{total}}-5}{252}\bigr) \cdot e^{-rT_{\text{total}}/252}$ |
+| **③ Delivery** | KI breached **and** worst asset $\lt$ Strike | $\bigl(100c\frac{T_{\text{total}}-5}{252} + 100\frac{S_{\text{worst}}}{\text{Strike}}\bigr) e^{-rT_{\text{total}}/252}$ |
+
+> **American KI**: observed continuously (any day breach). **European KI**: observed at maturity only.  
+> **KO observation** begins after KO Start month. Coupon accrues daily while the note is alive.
+
+```mermaid
+flowchart LR
+    A[Start] --> B{All assets<br/>≥ KO barrier?}
+    B -->|Yes| C[🔵 KO<br/>Early redemption<br/>Principal + accrued coupon]
+    B -->|No| D{KI breached?}
+    D -->|No| E[🟢 Safe Maturity<br/>Principal + all coupons]
+    D -->|Yes| F{Worst asset<br/>≥ Strike?}
+    F -->|Yes| E
+    F -->|No| G[🔴 Delivery<br/>Physical shares<br/>of worst performer]
 ```
 
 ---
@@ -165,7 +171,7 @@ Or double-click `build_exe.bat`. Output: `dist/FCN_Pricing_Tool.exe` (~13 MB).
 | requests   | ≥2.28  | HTTP client for Yahoo Finance |
 | urllib3    | ≥2.0   | Connection pooling & retry    |
 
-No API keys required. No `yfinance` — direct Yahoo Finance v8 chart API with browser headers.
+No API keys required. Stock price data can be directly fetched from `yfinance`.
 
 ---
 
