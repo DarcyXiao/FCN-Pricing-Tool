@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FCN Pricing Simulation (Monte Carlo)</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <script>
+        MathJax = {
+            tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] },
+            chtml: { scale: 1.0 },
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+    <style>
+        :root {
+            --teal: #008080; --teal-light: #38b2ac; --teal-bg: #e6fffa;
+            --navy: #1a237e; --red: #e53935; --bg: #f4f7f9;
+            --radius: 12px;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 1500px; margin: auto; }
+        .header { background: var(--teal); color: white; padding: 15px 25px; border-radius: var(--radius); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .header h2 { margin: 0; }
+        .mode-tabs { display: flex; gap: 0; }
+        .mode-tab { padding: 8px 20px; border: 2px solid rgba(255,255,255,0.5); cursor: pointer; font-weight: bold; font-size: 14px; color: rgba(255,255,255,0.7); background: transparent; transition: all 0.2s; }
+        .mode-tab:first-child { border-radius: 8px 0 0 8px; }
+        .mode-tab:last-child { border-radius: 0 8px 8px 0; }
+        .mode-tab.active { background: white; color: var(--teal); border-color: white; }
+        .mode-tab:hover:not(.active) { background: rgba(255,255,255,0.15); }
+
+        .main-layout { display: grid; grid-template-columns: 340px 1fr; gap: 20px; }
+        .sidebar { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+        .kpi-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
+        .kpi-box { background: white; padding: 20px; border-radius: 15px; text-align: center; border-top: 6px solid var(--teal); box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
+        .kpi-box .kpi-label { font-size: 13px; color: #666; }
+        .kpi-box .kpi-value { font-size: 32px; font-weight: bold; color: var(--teal); }
+        .kpi-box.accent { border-top-color: var(--teal-light); }
+        .kpi-box.accent .kpi-value { color: var(--teal-light); }
+        .wide-card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); margin-bottom: 20px; }
+        .viz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .viz-card { background: white; padding: 20px; border-radius: 15px; height: 420px; display: flex; flex-direction: column; }
+        h4 { margin: 15px 0 5px 0; color: var(--teal); border-bottom: 1px solid #eee; padding-bottom: 5px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+        label { display: block; margin-top: 10px; font-size: 12px; font-weight: bold; color: #666; }
+        input, select { width: 100%; padding: 8px; margin-top: 4px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        input:focus, select:focus { outline: none; border-color: var(--teal); }
+        button { width: 100%; padding: 15px; background: var(--teal); color: white; border: none; border-radius: 10px; cursor: pointer; font-size: 16px; font-weight: bold; margin-top: 20px; transition: background 0.3s; }
+        button:hover { background: #006666; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #status { font-size: 13px; margin-top: 12px; padding: 10px; border-radius: 8px; display: none; background: var(--teal-bg); }
+        #status.error { background: #ffeaea; color: var(--red); }
+        .chart-container { flex-grow: 1; position: relative; width: 100%; min-height: 0; }
+
+        .iteration-log { font-family: 'Consolas', monospace; font-size: 12px; max-height: 200px; overflow-y: auto;
+                         background: #f8f9fa; padding: 10px; border-radius: 8px; margin-top: 8px; display: none; }
+        .iteration-log.open { display: block; }
+        .iteration-log .iter-row { padding: 2px 0; border-bottom: 1px solid #eee; }
+
+        .doc-link { display: inline-block; margin-top: 12px; font-size: 12px; color: var(--teal); text-decoration: underline; cursor: pointer; }
+        .doc-link:hover { color: #006666; }
+
+        /* ---- Documentation Modal ---- */
+        .doc-overlay { display: none; position: fixed; z-index: 9999; top: 0; left: 0; width: 100%; height: 100%;
+                       background: rgba(0,0,0,0.55); justify-content: center; align-items: flex-start; padding-top: 30px; }
+        .doc-overlay.open { display: flex; }
+        .doc-modal { background: white; width: 92vw; max-width: 1020px; max-height: 90vh; border-radius: 16px;
+                     box-shadow: 0 20px 60px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; }
+        .doc-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 28px;
+                      background: var(--teal); color: white; flex-shrink: 0; }
+        .doc-header h2 { margin: 0; font-size: 1.2rem; }
+        .doc-close { background: none; border: none; color: white; font-size: 28px; cursor: pointer;
+                     width: 36px; height: 36px; line-height: 36px; text-align: center; border-radius: 50%; margin: 0; padding: 0; }
+        .doc-close:hover { background: rgba(255,255,255,0.2); }
+        .doc-body { padding: 20px 28px 30px 28px; overflow-y: auto; flex-grow: 1; font-size: 14px; line-height: 1.7; color: #333; }
+        .doc-body h3 { color: var(--teal); margin: 18px 0 8px 0; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+        .doc-body h3:first-child { margin-top: 0; }
+        .doc-body .formula { background: #f8f9fa; padding: 14px 20px; border-left: 4px solid var(--teal); margin: 12px 0; border-radius: 4px; overflow-x: auto; }
+        .doc-body table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px; }
+        .doc-body th { background: var(--teal); color: white; padding: 8px 12px; text-align: left; }
+        .doc-body td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+        .doc-body tr:nth-child(even) td { background: #f8f9fa; }
+        .doc-body ul, .doc-body ol { padding-left: 20px; }
+        .doc-body li { margin: 4px 0; }
+        .doc-body .note { background: var(--teal-bg); border-radius: 8px; padding: 14px 18px; margin: 14px 0; font-size: 0.9rem; }
+
+        @media (max-width: 1100px) {
+            .main-layout { grid-template-columns: 1fr; }
+            .viz-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h2>FCN Pricing Simulation (Monte Carlo)</h2>
+        <div class="mode-tabs">
+            <div class="mode-tab active" id="tabMode1" onclick="switchMode(1)">Fair Value</div>
+            <div class="mode-tab" id="tabMode2" onclick="switchMode(2)">Fair Coupon</div>
+        </div>
+    </div>
+
+    <div class="main-layout">
+        <!-- ================ SIDEBAR ================ -->
+        <div class="sidebar">
+            <h4>1. Underlying Assets</h4>
+            <input type="text" id="tickers" value="TSM, NVDA, TSLA" placeholder="AAPL, MSFT, GOOGL">
+            <label>Data Period</label>
+            <select id="dataPeriod">
+                <option value="6mo">Past 6 Months</option>
+                <option value="1y" selected>Past 1 Year</option>
+                <option value="2y">Past 2 Years</option>
+            </select>
+
+            <h4>2. Product Terms</h4>
+            <label>Tenor (Months)</label><input type="number" id="C8" value="12" min="1" max="60">
+            <label id="lblC16">Annual Coupon (%)</label><input type="number" id="C16" value="15" min="0" max="100" step="0.1">
+            <div id="targetFVgroup" style="display:none">
+                <label>Target Fair Value (%)</label><input type="number" id="targetFV" value="100" min="80" max="120" step="0.1">
+            </div>
+            <label>KO Barrier (%)</label><input type="number" id="C9" value="100" min="50" max="200">
+            <label>KI Barrier (%)</label><input type="number" id="C10" value="60" min="0" max="100">
+            <label>Strike (%)</label><input type="number" id="C11" value="75" min="0" max="100">
+            <label>KO Start (Month)</label><input type="number" id="C12" value="1" min="1" max="24">
+            <label>KI Type</label>
+            <select id="C13">
+                <option value="A">American (Continuous)</option>
+                <option value="E">European (At Maturity)</option>
+            </select>
+
+            <h4>3. Simulation Settings</h4>
+            <label>Risk-Free Rate (%)</label><input type="number" id="C14" value="4.5" min="0" max="20" step="0.1">
+            <label>Number of Simulations</label><input type="number" id="idSims" value="2000" min="500" max="100000" step="500">
+            <label>Proxy (optional)</label><input type="text" id="proxyUrl" placeholder="http://127.0.0.1:7890">
+
+            <button id="btnRun" onclick="runWorkflow()">Run Monte Carlo Simulation</button>
+            <div id="status"></div>
+            <div class="iteration-log" id="iterLog"></div>
+            <button style="margin-top:10px;background:transparent;color:var(--teal);border:2px solid var(--teal);font-size:13px;padding:10px;" onclick="openDocs()">📖 Methodology &amp; Documentation</button>
+        </div>
+
+        <!-- ================ MAIN CONTENT ================ -->
+        <div class="content-area">
+            <div class="kpi-row">
+                <div class="kpi-box" id="kpi1">
+                    <div class="kpi-label">Fair Value (%)</div>
+                    <div class="kpi-value" id="vFV">--</div>
+                </div>
+                <div class="kpi-box accent" id="kpi2">
+                    <div class="kpi-label">Average Duration (Days)</div>
+                    <div class="kpi-value" id="vDur">--</div>
+                </div>
+            </div>
+            <div class="wide-card">
+                <h3 style="margin-top:0">Scenario Distribution</h3>
+                <div style="height: 380px;"><canvas id="scenarioChart"></canvas></div>
+            </div>
+            <div class="viz-grid">
+                <div class="viz-card"><h3>Correlation Matrix</h3><div id="heatmap" style="flex-grow:1;"></div></div>
+                <div class="viz-card"><h3>Delivery Risk Contribution</h3><div class="chart-container"><canvas id="riskChart"></canvas></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+Chart.register(ChartDataLabels);
+let charts = {};
+let currentMode = 1;
+
+// =============================================================================
+// MODE SWITCHING
+// =============================================================================
+function switchMode(mode) {
+    currentMode = mode;
+    document.getElementById('tabMode1').classList.toggle('active', mode === 1);
+    document.getElementById('tabMode2').classList.toggle('active', mode === 2);
+
+    document.getElementById('lblC16').style.display = mode === 1 ? 'block' : 'none';
+    document.getElementById('C16').style.display = mode === 1 ? 'block' : 'none';
+    document.getElementById('targetFVgroup').style.display = mode === 2 ? 'block' : 'none';
+
+    document.getElementById('btnRun').textContent = mode === 1
+        ? 'Run Monte Carlo Simulation'
+        : 'Solve Fair Coupon (Bisection)';
+
+    document.getElementById('kpi1').querySelector('.kpi-label').textContent =
+        mode === 1 ? 'Fair Value (%)' : 'Fair Coupon (%)';
+
+    const log = document.getElementById('iterLog');
+    log.classList.remove('open');
+    log.innerHTML = '';
+
+    clearUI();
+}
+
+// =============================================================================
+// CLEAR UI
+// =============================================================================
+function clearUI() {
+    document.getElementById('vFV').innerText = '--';
+    document.getElementById('vDur').innerText = '--';
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('status').classList.remove('error');
+    document.getElementById('status').innerText = '';
+
+    if (charts.scene) { charts.scene.destroy(); charts.scene = null; }
+    if (charts.risk)  { charts.risk.destroy();  charts.risk = null; }
+
+    const hm = document.getElementById('heatmap');
+    hm.innerHTML = '';
+    const sc = document.getElementById('scenarioChart');
+    const ctx = sc.getContext('2d');
+    ctx.clearRect(0, 0, sc.width, sc.height);
+}
+
+// =============================================================================
+// DATA FETCHING
+// =============================================================================
+async function fetchPrice(ticker) {
+    const period = document.getElementById('dataPeriod').value;
+    let url = `http://127.0.0.1:5000/api/history?ticker=${encodeURIComponent(ticker)}&period=${encodeURIComponent(period)}`;
+    const proxy = document.getElementById('proxyUrl').value.trim();
+    if (proxy) url += `&proxy=${encodeURIComponent(proxy)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.prices && data.prices.length > 0) return data.prices;
+    throw new Error(`${ticker}: ${data.error || 'No data available'}`);
+}
+
+async function fetchAllPrices(tickers, status) {
+    const allPrices = [];
+    for (let i = 0; i < tickers.length; i++) {
+        status.innerText = `⏳ Fetching ${tickers[i]} (${i+1}/${tickers.length}) ...`;
+        allPrices.push(await fetchPrice(tickers[i]));
+        if (i < tickers.length - 1) await new Promise(r => setTimeout(r, 2500));
+    }
+    return allPrices;
+}
+
+// =============================================================================
+// DATA ANALYSIS
+// =============================================================================
+function analyzeData(priceSeries) {
+    const n = priceSeries.length;
+    const returns = priceSeries.map(s => {
+        let r = []; for(let i=1; i<s.length; i++) r.push(Math.log(s[i]/s[i-1])); return r;
+    });
+    const vols = returns.map(r => {
+        const m = r.reduce((a,b)=>a+b,0)/r.length;
+        return Math.sqrt(r.reduce((a,b)=>a+Math.pow(b-m,2),0)/(r.length-1)) * Math.sqrt(252);
+    });
+    const matrix = Array.from({length:n}, (_,i) => Array.from({length:n}, (_,j) => {
+        if(i===j) return 1;
+        const ri = returns[i], rj = returns[j];
+        const mi = ri.reduce((a,b)=>a+b,0)/ri.length, mj = rj.reduce((a,b)=>a+b,0)/rj.length;
+        let num=0, d1=0, d2=0;
+        for(let k=0; k<ri.length; k++){
+            num += (ri[k]-mi)*(rj[k]-mj); d1 += Math.pow(ri[k]-mi,2); d2 += Math.pow(rj[k]-mj,2);
+        }
+        return num/Math.sqrt(d1*d2);
+    }));
+    return { matrix, vols, nAssets: n };
+}
+
+// =============================================================================
+// PARAMETERS
+// =============================================================================
+function getParams(couponOverride) {
+    return {
+        tenor: parseInt(document.getElementById('C8').value),
+        coupon: couponOverride !== undefined ? couponOverride : parseFloat(document.getElementById('C16').value)/100,
+        ko: parseFloat(document.getElementById('C9').value)/100,
+        ki: parseFloat(document.getElementById('C10').value)/100,
+        strike: parseFloat(document.getElementById('C11').value)/100,
+        koStart: parseInt(document.getElementById('C12').value),
+        kiType: document.getElementById('C13').value,
+        rf: parseFloat(document.getElementById('C14').value)/100,
+        sims: parseInt(document.getElementById('idSims').value),
+    };
+}
+
+// =============================================================================
+// MONTE CARLO ENGINE
+// =============================================================================
+function simulateFCN(analysis, params) {
+    const { tenor, coupon, ko, ki, strike, koStart, kiType, rf, sims } = params;
+    const n = analysis.nAssets;
+    const cpn = coupon;
+
+    const L = Array.from({length:n}, ()=>Array(n).fill(0));
+    for(let i=0; i<n; i++) {
+        for(let j=0; j<=i; j++) {
+            let s = 0;
+            for(let k=0; k<j; k++) s += L[i][k] * L[j][k];
+            if(i===j) L[i][j] = Math.sqrt(Math.max(1e-12, analysis.matrix[i][i] - s));
+            else L[i][j] = (analysis.matrix[i][j] - s) / (L[j][j] || 1e-12);
+        }
+    }
+
+    const koCounts = new Array(12).fill(0);
+    let safeCount = 0, kiCount = 0;
+    const kiAssetCounts = new Array(n).fill(0);
+    let totalPayoff = 0, totalDuration = 0;
+
+    const gPeriodDays = (21 * koStart) + 4;
+    const totalDays = (21 * tenor) + 5;
+    const dt = 1.0 / 252;
+
+    for(let sim=0; sim<sims; sim++) {
+        let S = new Array(n).fill(1.0);
+        let wasKI = false;
+        let hasStockHitKO = new Array(n).fill(false);
+        let isKO = false;
+
+        for(let T=1; T<=totalDays; T++) {
+            let zRaw = new Array(n);
+            for(let i=0; i<n; i++) {
+                let u=0, v=0;
+                while(u===0) u=Math.random();
+                while(v===0) v=Math.random();
+                zRaw[i] = Math.sqrt(-2.0*Math.log(u)) * Math.cos(2.0*Math.PI*v);
+            }
+            for(let i=0; i<n; i++) {
+                let zCorr = 0;
+                for(let j=0; j<=i; j++) zCorr += L[i][j] * zRaw[j];
+                S[i] *= Math.exp((rf - 0.5*analysis.vols[i]**2)*dt + analysis.vols[i]*Math.sqrt(dt)*zCorr);
+            }
+            if(kiType === "A") {
+                for(let i=0; i<n; i++) { if(S[i] <= ki) { wasKI = true; break; } }
+            }
+            if(T > gPeriodDays) {
+                for(let j=0; j<n; j++) { if(S[j] >= ko) hasStockHitKO[j] = true; }
+                if(hasStockHitKO.every(v=>v)) {
+                    isKO = true;
+                    const koMonth = Math.min(tenor, Math.floor((T - gPeriodDays + 20)/21) + koStart);
+                    koCounts[Math.min(11, Math.max(0, koMonth-1))]++;
+                    const frac = T/252;
+                    totalPayoff += 100*(1 + frac*cpn) * Math.exp(-rf*frac);
+                    totalDuration += T;
+                    break;
+                }
+            }
+        }
+        if(!isKO) {
+            totalDuration += totalDays;
+            const worst = Math.min(...S);
+            const worstIdx = S.indexOf(worst);
+            if(kiType === "E" && worst <= ki) wasKI = true;
+            if(wasKI && worst < strike) {
+                kiCount++; kiAssetCounts[worstIdx]++;
+                const frac = totalDays/252;
+                totalPayoff += (100*frac*cpn + 100*worst/strike) * Math.exp(-rf*frac);
+            } else {
+                safeCount++;
+                const frac = totalDays/252;
+                totalPayoff += 100*(1 + frac*cpn) * Math.exp(-rf*frac);
+            }
+        }
+    }
+    return { koCounts, safe: safeCount, ki: kiCount, kiAssetCounts, payoffs: totalPayoff, durations: totalDuration, sims };
+}
+
+// =============================================================================
+// BISECTION SOLVER
+// =============================================================================
+async function solveFairCoupon(analysis, baseParams) {
+    const targetFV = parseFloat(document.getElementById('targetFV').value);
+    const tol = 0.05, cpnTol = 0.0001, maxIter = 25;
+    const log = document.getElementById('iterLog');
+    const status = document.getElementById('status');
+
+    log.classList.add('open');
+    log.innerHTML = '<div style="font-weight:bold;margin-bottom:4px">Bisection Progress:</div>';
+
+    let cLow = 0.001, cHigh = 0.50, fvLow, fvHigh;
+
+    status.innerText = '⏳ Bisection: evaluating lower bound (0.1%)...';
+    fvLow = simulateFCN(analysis, {...baseParams, coupon: cLow}).payoffs / baseParams.sims;
+    log.innerHTML += `<div class="iter-row">c_low  = ${(cLow*100).toFixed(2)}%  → FV = ${fvLow.toFixed(3)}</div>`;
+
+    status.innerText = '⏳ Bisection: evaluating upper bound (50%)...';
+    fvHigh = simulateFCN(analysis, {...baseParams, coupon: cHigh}).payoffs / baseParams.sims;
+    log.innerHTML += `<div class="iter-row">c_high = ${(cHigh*100).toFixed(2)}%  → FV = ${fvHigh.toFixed(3)}</div>`;
+
+    if (fvLow > targetFV) {
+        cLow = 0.0001;
+        fvLow = simulateFCN(analysis, {...baseParams, coupon: cLow}).payoffs / baseParams.sims;
+        log.innerHTML += `<div class="iter-row" style="color:orange">Lower bound adjusted → FV = ${fvLow.toFixed(3)}</div>`;
+    }
+    if (fvHigh < targetFV) {
+        log.innerHTML += `<div class="iter-row" style="color:orange">Target unreachable — max FV = ${fvHigh.toFixed(2)}</div>`;
+        log.scrollTop = log.scrollHeight;
+        return { coupon: cHigh, fv: fvHigh, iterations: 0, result: null };
+    }
+
+    let iter;
+    for(iter = 0; iter < maxIter; iter++) {
+        const cMid = (cLow + cHigh) / 2;
+        status.innerText = `⏳ Bisection iter ${iter+1}/${maxIter}: c = ${(cMid*100).toFixed(3)}%`;
+        const res = simulateFCN(analysis, {...baseParams, coupon: cMid});
+        const fv = res.payoffs / res.sims;
+        log.innerHTML += `<div class="iter-row">Iter ${String(iter+1).padStart(2)}: c = ${(cMid*100).toFixed(4)}%  → FV = ${fv.toFixed(4)}  [${(cLow*100).toFixed(3)}–${(cHigh*100).toFixed(3)}%]</div>`;
+        log.scrollTop = log.scrollHeight;
+
+        if (Math.abs(fv - targetFV) < tol || (cHigh - cLow) < cpnTol) { cLow = cMid; cHigh = cMid; break; }
+        if (fv > targetFV) cHigh = cMid; else cLow = cMid;
+        await new Promise(r => setTimeout(r, 10));
+    }
+
+    const finalC = (cLow + cHigh) / 2;
+    status.innerText = '⏳ Running final simulation...';
+    const finalRes = simulateFCN(analysis, {...baseParams, coupon: finalC});
+    const finalFV = finalRes.payoffs / finalRes.sims;
+
+    log.innerHTML += `<div class="iter-row" style="font-weight:bold;color:var(--teal)">Converged after ${iter+1} iterations</div>`;
+    log.innerHTML += `<div class="iter-row" style="font-weight:bold">Fair Coupon = ${(finalC*100).toFixed(4)}%  → FV = ${finalFV.toFixed(4)}</div>`;
+    log.scrollTop = log.scrollHeight;
+    return { coupon: finalC, fv: finalFV, iterations: iter+1, result: finalRes };
+}
+
+// =============================================================================
+// MAIN WORKFLOW
+// =============================================================================
+async function runWorkflow() {
+    const status = document.getElementById('status');
+    const btn = document.getElementById('btnRun');
+    const tickers = document.getElementById('tickers').value.split(',').map(s=>s.trim().toUpperCase()).filter(s=>s);
+    const log = document.getElementById('iterLog');
+    log.classList.remove('open');
+    log.innerHTML = '';
+
+    btn.disabled = true;
+    status.style.display = 'block';
+    status.classList.remove('error');
+    status.innerText = '⏳ Fetching market data...';
+
+    try {
+        const allPrices = await fetchAllPrices(tickers, status);
+        status.innerText = '⏳ Analyzing volatilities & correlations...';
+        const analysis = analyzeData(allPrices);
+
+        if (currentMode === 1) {
+            status.innerText = '⏳ Running Monte Carlo simulations...';
+            const params = getParams();
+            const results = simulateFCN(analysis, params);
+            updateUI(tickers, analysis, params, results);
+            status.innerText = '✅ Simulation complete';
+        } else {
+            status.innerText = '⏳ Solving for fair coupon via bisection...';
+            const baseParams = getParams(0.10);
+            const solution = await solveFairCoupon(analysis, baseParams);
+            if (solution.result) {
+                const finalParams = {...baseParams, coupon: solution.coupon};
+                updateUI(tickers, analysis, finalParams, solution.result);
+            }
+            status.innerText = `✅ Fair Coupon = ${(solution.coupon*100).toFixed(3)}% (${solution.iterations} bisection iterations)`;
+        }
+    } catch (e) {
+        status.innerText = '❌ Error: ' + e.message;
+        status.classList.add('error');
+        console.error(e);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// =============================================================================
+// UPDATE UI
+// =============================================================================
+function updateUI(tickers, analysis, params, res) {
+    const sims = res.sims || params.sims;
+    const fv = res.payoffs / sims;
+    const avgDur = res.durations / sims;
+
+    if (currentMode === 1) {
+        document.getElementById('vFV').innerText = fv.toFixed(2);
+    } else {
+        document.getElementById('vFV').innerText = (params.coupon * 100).toFixed(3);
+    }
+    document.getElementById('vDur').innerText = avgDur.toFixed(0);
+
+    // Scenario chart
+    if(charts.scene) charts.scene.destroy();
+    const labels = [];
+    for(let i=1; i<=12; i++) labels.push(`KO M${i}`);
+    labels.push('Safe Maturity', 'Delivery');
+    charts.scene = new Chart(document.getElementById('scenarioChart'), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                data: [...res.koCounts, res.safe, res.ki],
+                backgroundColor: labels.map((_,i)=>i<12?'#4db6ac':(i===12?'#1a237e':'#e53935')),
+                borderRadius: 4,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: {
+                datalabels: { anchor:'end', align:'top', font:{weight:'bold',size:11}, formatter:v=>v>0?v:'' },
+                legend: { display: false },
+                tooltip: { callbacks: { label: ctx => `Count: ${ctx.raw}  (${(ctx.raw/sims*100).toFixed(1)}%)` } }
+            },
+            scales: { y: { beginAtZero:true, grid:{display:false}, title:{display:true,text:'Paths'} }, x: { ticks:{font:{size:10}} } }
+        }
+    });
+
+    // Heatmap
+    Plotly.newPlot('heatmap', [{
+        z: analysis.matrix, x: tickers, y: tickers, type: 'heatmap',
+        colorscale: [[0,'#f2fdfd'],[0.5,'#4db6ac'],[1,'#008080']],
+        text: analysis.matrix.map(r=>r.map(v=>v.toFixed(2))), texttemplate:'%{text}', zmin:0, zmax:1,
+    }], { margin:{t:0,b:40,l:40,r:0}, responsive:true });
+
+    // Risk chart
+    if(charts.risk) charts.risk.destroy();
+    const riskData = res.kiAssetCounts.map(v=>(v/sims*100).toFixed(1));
+    charts.risk = new Chart(document.getElementById('riskChart'), {
+        type: 'bar',
+        data: {
+            labels: tickers,
+            datasets: [{ data: riskData, backgroundColor:'#e53935', barThickness:30, borderRadius:3 }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                datalabels: { anchor:'end', align:'right', formatter:v=>v+'%', font:{weight:'bold',size:13}, offset:8, color:'#e53935' }
+            },
+            scales: {
+                x: { beginAtZero:true, max:Math.max(...riskData.map(Number))+20||100, grid:{display:false}, ticks:{display:false} },
+                y: { grid:{display:false}, ticks:{font:{weight:'bold'}} }
+            }
+        }
+    });
+}
+
+switchMode(1);
+
+// =============================================================================
+// DOCUMENTATION MODAL
+// =============================================================================
+function openDocs() {
+    const overlay = document.getElementById('docOverlay');
+    overlay.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    // Render MathJax when modal first opens
+    const body = document.getElementById('docBody');
+    if (window.MathJax && body.dataset.rendered !== '1') {
+        MathJax.typesetPromise([body]).then(() => { body.dataset.rendered = '1'; }).catch(()=>{});
+    }
+}
+function closeDocs() {
+    document.getElementById('docOverlay').classList.remove('open');
+    document.body.style.overflow = '';
+}
+// Close on overlay click (not on modal itself)
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('docOverlay').addEventListener('click', function(e) {
+        if (e.target === this) closeDocs();
+    });
+});
+// Close on Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeDocs();
+});
+</script>
+
+<!-- ========== DOCUMENTATION MODAL ========== -->
+<div class="doc-overlay" id="docOverlay">
+<div class="doc-modal">
+<div class="doc-header">
+    <h2>FCN Pricing — Methodology &amp; Calculation Details</h2>
+    <button class="doc-close" onclick="closeDocs()">&times;</button>
+</div>
+<div class="doc-body" id="docBody">
+
+<h3>1. Overview</h3>
+<p>This tool prices <strong>Fixed Coupon Notes (FCNs)</strong> using <strong>Monte Carlo simulation</strong> with correlated <strong>Geometric Brownian Motion (GBM)</strong>. Two modes:</p>
+<ul>
+    <li><strong>Fair Value</strong> — Given a coupon rate, compute the present value of the FCN.</li>
+    <li><strong>Fair Coupon</strong> — Given a target fair value (default 100%), solve for the equilibrium coupon via <strong>bisection</strong>.</li>
+</ul>
+
+<h3>2. Data Preparation</h3>
+<p>Historical closing prices from Yahoo Finance. From the price series we compute:</p>
+<div class="formula">
+$$r_t = \ln\!\left(\frac{P_t}{P_{t-1}}\right) \qquad
+\sigma = \operatorname{std}(r) \times \sqrt{252} \qquad
+\rho_{ij} = \frac{\operatorname{Cov}(r_i, r_j)}{\sigma_i \cdot \sigma_j}$$
+</div>
+<table>
+<tr><th>Symbol</th><th>Meaning</th><th>Computation</th></tr>
+<tr><td>$r_t$</td><td>Daily log return</td><td>$\ln(P_t / P_{t-1})$</td></tr>
+<tr><td>$\sigma$</td><td>Annualized volatility</td><td>$\operatorname{std}(r) \times \sqrt{252}$</td></tr>
+<tr><td>$\rho_{ij}$</td><td>Correlation</td><td>$\operatorname{Cov}(r_i, r_j) / (\sigma_i^{\text{daily}} \sigma_j^{\text{daily}})$</td></tr>
+</table>
+
+<h3>3. Monte Carlo Simulation — Correlated GBM</h3>
+<p>Under the <strong>risk-neutral measure</strong>, each asset follows:</p>
+<div class="formula">
+$$\frac{dS_i}{S_i} = r \cdot dt + \sigma_i \cdot dW_i$$
+</div>
+<p>Correlated shocks via <strong>Cholesky decomposition</strong>:</p>
+<div class="formula">
+$$\begin{aligned}
+\Sigma &= L \cdot L^T &&\text{(Cholesky factorization)} \\[4pt]
+Z_{\text{corr}} &= L \cdot Z &&(Z \sim \mathcal{N}(0,1)\text{ i.i.d.}) \\[4pt]
+S_i(t+dt) &= S_i(t) \cdot \exp\!\Bigl((r - \tfrac{1}{2}\sigma_i^2)\,dt + \sigma_i\sqrt{dt} \cdot Z_{\text{corr}}[i]\Bigr)
+\end{aligned}$$
+</div>
+<p><strong>Box-Muller transform</strong> for standard normals:</p>
+<div class="formula">$$Z = \sqrt{-2\ln U_1} \cdot \cos(2\pi U_2), \quad U_1, U_2 \sim \mathcal{U}(0,1)$$</div>
+<p>Paths simulated at <strong>daily granularity</strong> ($dt = 1/252$ yr). A product with $M$ months tenor uses $21M + 5$ total steps.</p>
+
+<h3>4. Payoff Structure &amp; Discounting</h3>
+<p><strong>Worst-of</strong> basket — all barrier conditions evaluated on the <strong>minimum</strong> return across assets.</p>
+<table>
+<tr><th>Scenario</th><th>Condition</th><th>Discounted Payoff</th></tr>
+<tr>
+    <td><strong>① Knock-Out</strong></td>
+    <td>All assets $\ge$ KO barrier on any day $t \ge$ KO Start</td>
+    <td>$100 \cdot \bigl(1 + c \cdot \frac{T-5}{252}\bigr) \cdot e^{-r \cdot T/252}$</td>
+</tr>
+<tr>
+    <td><strong>② Safe Maturity</strong></td>
+    <td>No KO; no KI, or KI but worst $\ge$ Strike</td>
+    <td>$100 \cdot \bigl(1 + c \cdot \frac{T_{\text{total}}-5}{252}\bigr) \cdot e^{-r \cdot T_{\text{total}}/252}$</td>
+</tr>
+<tr>
+    <td><strong>③ Delivery</strong></td>
+    <td>KI breached AND worst $\lt$ Strike at maturity</td>
+    <td>$\bigl(100c\frac{T_{\text{total}}-5}{252} + 100\frac{S_{\text{worst}}}{\text{Strike}}\bigr) e^{-r \cdot T_{\text{total}}/252}$</td>
+</tr>
+</table>
+<div class="note">
+<strong>KI Types:</strong><br>
+<strong>American (Continuous)</strong> — KI observed every day; any breach triggers KI permanently.<br>
+<strong>European (At Maturity)</strong> — KI observed only on the final day.
+</div>
+
+<h3>5. Fair Value</h3>
+<div class="formula">
+$$\text{Fair Value (\%)} = \frac{1}{N} \sum_{k=1}^{N} PV_k, \qquad \text{SE} \approx \frac{\operatorname{std}(PV)}{\sqrt{N}}$$
+</div>
+
+<h3>6. Fair Coupon Solver — Bisection</h3>
+<p>The fair coupon $c^*$ satisfies $FV(c^*) = \text{Target}$ (typically 100%). Since $FV(c)$ is monotonic in $c$:</p>
+<ol>
+    <li>Bounds: $c_{\text{low}} = 0.1\%$, $c_{\text{high}} = 50\%$</li>
+    <li>Midpoint: $c_{\text{mid}} = (c_{\text{low}} + c_{\text{high}}) / 2$</li>
+    <li>Run Monte Carlo → get $FV(c_{\text{mid}})$</li>
+    <li>$FV \gt \text{Target}$ → $c_{\text{high}} = c_{\text{mid}}$; else $c_{\text{low}} = c_{\text{mid}}$</li>
+    <li>Repeat until $|FV - \text{Target}| \lt 0.05$ or range $\lt 0.01\%$ (max 25 iter)</li>
+</ol>
+<div class="formula">$$\text{Convergence: } O\!\left(\log_2\frac{\text{range}}{\text{tolerance}}\right) \quad\Rightarrow\quad \lceil \log_2(4990) \rceil \approx 13 \text{ iterations max}$$</div>
+
+<h3>7. Assumptions &amp; Limitations</h3>
+<ul>
+    <li><strong>Constant volatility</strong> — GBM assumes constant $\sigma$; real markets exhibit volatility clustering.</li>
+    <li><strong>Constant correlation</strong> — correlations can spike during market stress.</li>
+    <li><strong>No dividends</strong> — Yahoo Finance adjusted-close prices are used; explicit dividends not modeled.</li>
+    <li><strong>No jump risk</strong> — plain GBM without Merton jump-diffusion; tail risk may be underestimated.</li>
+    <li><strong>Constant risk-free rate</strong> — yield curve effects ignored.</li>
+    <li><strong>Daily monitoring</strong> — continuous barriers approximated at daily frequency (~21 steps/month).</li>
+    <li><strong>Monte Carlo noise</strong> — sampling error $\sim O(1/\sqrt{N})$; 2000 paths → ~2pp SE.</li>
+</ul>
+
+</div>
+</div>
+</div>
+
+</body>
+</html>

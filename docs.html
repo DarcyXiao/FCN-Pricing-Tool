@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FCN Documentation — Methodology &amp; Calculation Details</title>
+    <script>
+        MathJax = {
+            tex: { inlineMath: [['$','$'],['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] },
+            chtml: { scale: 1.0 },
+        };
+    </script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
+    <style>
+        :root { --teal: #008080; --teal-light: #38b2ac; --teal-bg: #e6fffa; --navy: #1a237e; --red: #e53935; --bg: #f4f7f9; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); margin: 0; padding: 0; color: #333; }
+        .header { background: var(--teal); color: white; padding: 20px 40px; }
+        .header h1 { margin: 0; font-size: 1.5rem; }
+        .header p  { margin: 4px 0 0 0; opacity: 0.85; font-size: 0.95rem; }
+        .container { max-width: 960px; margin: 0 auto; padding: 30px 20px; }
+        .card { background: white; padding: 30px 36px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+        h2 { color: var(--teal); font-size: 1.2rem; border-bottom: 2px solid var(--teal-bg); padding-bottom: 8px; margin: 0 0 16px 0; }
+        h3 { color: var(--teal-light); font-size: 1.0rem; margin: 20px 0 8px 0; }
+        p  { line-height: 1.7; margin: 8px 0; }
+        ul, ol { padding-left: 22px; line-height: 1.7; }
+        li { margin: 4px 0; }
+
+        .formula { background: #f8f9fa; padding: 16px 22px; border-left: 4px solid var(--teal); margin: 14px 0; border-radius: 4px; overflow-x: auto; }
+        table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 0.9rem; }
+        th { background: var(--teal); color: white; padding: 10px 14px; text-align: left; }
+        td { padding: 10px 14px; border-bottom: 1px solid #e0e0e0; }
+        tr:nth-child(even) td { background: #f8f9fa; }
+
+        .note { background: var(--teal-bg); border-radius: 8px; padding: 14px 18px; margin: 14px 0; font-size: 0.9rem; }
+        .back-link { display: inline-block; margin: 20px 0; color: var(--teal); text-decoration: none; font-weight: bold; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>FCN Pricing Simulation — Documentation</h1>
+    <p>Methodology, mathematics, and implementation details</p>
+</div>
+
+<div class="container">
+
+<div class="card">
+<h2>1. Overview</h2>
+<p>This tool prices <strong>Fixed Coupon Notes (FCNs)</strong> using <strong>Monte Carlo simulation</strong> with correlated <strong>Geometric Brownian Motion (GBM)</strong>. It supports two calculation modes:</p>
+<ul>
+    <li><strong>Fair Value Mode</strong> — Given a coupon rate, compute the present value of the FCN.</li>
+    <li><strong>Fair Coupon Mode</strong> — Given a target fair value (default 100% of notional), solve for the equilibrium coupon rate using the <strong>bisection (binary search) method</strong>.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>2. Data Preparation</h2>
+<p>Historical closing prices are fetched from Yahoo Finance via a local Flask backend. From the price series we compute:</p>
+<div class="formula">
+$$r_t = \ln\!\left(\frac{P_t}{P_{t-1}}\right) \qquad
+\sigma = \operatorname{std}(r) \times \sqrt{252} \qquad
+\rho_{ij} = \frac{\operatorname{Cov}(r_i, r_j)}{\sigma_i \cdot \sigma_j}$$
+</div>
+<table>
+<tr><th>Symbol</th><th>Meaning</th><th>Computation</th></tr>
+<tr><td>$r_t$</td><td>Daily log return</td><td>$\ln(P_t / P_{t-1})$</td></tr>
+<tr><td>$\sigma$</td><td>Annualized volatility</td><td>$\operatorname{std}(r_{\text{daily}}) \times \sqrt{252}$</td></tr>
+<tr><td>$\rho_{ij}$</td><td>Correlation between assets $i$ and $j$</td><td>$\operatorname{Cov}(r_i, r_j) \,/\, (\sigma_i^{\text{daily}} \cdot \sigma_j^{\text{daily}})$</td></tr>
+</table>
+</div>
+
+<div class="card">
+<h2>3. Monte Carlo Simulation — Correlated GBM</h2>
+<p>Under the <strong>risk-neutral measure</strong>, each asset price $S_i$ follows a stochastic differential equation:</p>
+<div class="formula">
+$$\frac{dS_i}{S_i} = r \cdot dt + \sigma_i \cdot dW_i$$
+</div>
+<p>where $r$ is the risk-free rate, $\sigma_i$ is the annualized volatility, and $dW_i$ are correlated Brownian motions with $\operatorname{Corr}(dW_i, dW_j) = \rho_{ij}$.</p>
+
+<h3>3.1 Cholesky Decomposition</h3>
+<p>To simulate correlated random shocks, we factor the correlation matrix $\Sigma$ using Cholesky decomposition:</p>
+<div class="formula">
+$$\begin{aligned}
+\Sigma &= L \cdot L^T &&\text{(Cholesky factorization of the correlation matrix)} \\[4pt]
+Z_{\text{corr}} &= L \cdot Z &&(Z \sim \mathcal{N}(0,1)\; \text{i.i.d. — Box-Muller transform}) \\[4pt]
+S_i(t+dt) &= S_i(t) \cdot \exp\!\Bigl((r - \tfrac{1}{2}\sigma_i^2)\,dt + \sigma_i\sqrt{dt} \cdot Z_{\text{corr}}[i]\Bigr)
+\end{aligned}$$
+</div>
+<p>The <strong>Box-Muller transform</strong> converts uniform random numbers to standard normals:</p>
+<div class="formula">$$Z = \sqrt{-2\ln U_1} \cdot \cos(2\pi U_2), \quad U_1, U_2 \sim \mathcal{U}(0,1)$$</div>
+
+<h3>3.2 Discretization</h3>
+<p>Paths are simulated at <strong>daily granularity</strong> with $dt = 1/252$ years per step. A product with $M$ months of tenor uses $21 \times M + 5$ total steps to account for calendar effects.</p>
+</div>
+
+<div class="card">
+<h2>4. Payoff Structure &amp; Discounting</h2>
+<p>The FCN is a <strong>worst-of</strong> basket product. All barrier conditions are evaluated on the <strong>minimum</strong> return across all assets. Three mutually exclusive scenarios determine the payoff:</p>
+
+<table>
+<tr><th>Scenario</th><th>Condition</th><th>Discounted Payoff</th></tr>
+<tr>
+    <td><strong>① Knock-Out (KO)</strong></td>
+    <td>All assets $\ge$ KO barrier on any day $t \ge$ KO Start</td>
+    <td>$100 \cdot \bigl(1 + c \cdot \frac{T-5}{252}\bigr) \cdot e^{-r \cdot T/252}$</td>
+</tr>
+<tr>
+    <td><strong>② Safe Maturity</strong></td>
+    <td>No KO occurred; either no KI, or KI but worst $\ge$ Strike at maturity</td>
+    <td>$100 \cdot \bigl(1 + c \cdot \frac{T_{\text{total}}-5}{252}\bigr) \cdot e^{-r \cdot T_{\text{total}}/252}$</td>
+</tr>
+<tr>
+    <td><strong>③ Delivery</strong></td>
+    <td>KI breached AND worst asset $\lt$ Strike at maturity</td>
+    <td>$\bigl(100\,c\,\frac{T_{\text{total}}-5}{252} + 100\,\frac{S_{\text{worst}}}{\text{Strike}}\bigr) \cdot e^{-r \cdot T_{\text{total}}/252}$</td>
+</tr>
+</table>
+
+<div class="note">
+<strong>KI Types:</strong><br>
+<strong>American (Continuous)</strong> — KI is observed every day. Any breach triggers KI permanently.<br>
+<strong>European (At Maturity)</strong> — KI is observed only on the final day.
+</div>
+</div>
+
+<div class="card">
+<h2>5. Fair Value Calculation</h2>
+<p>The fair value is the expected discounted payoff across all Monte Carlo paths:</p>
+<div class="formula">
+$$\text{Fair Value (\%)} = \frac{1}{N} \sum_{k=1}^{N} PV_k$$
+</div>
+<p>where $N$ is the number of simulated paths, and $PV_k$ is the present value of path $k$ discounted at the risk-free rate using continuous compounding. The standard error of the estimate is:</p>
+<div class="formula">$$\text{SE} \approx \frac{\operatorname{std}(PV)}{\sqrt{N}}$$</div>
+</div>
+
+<div class="card">
+<h2>6. Fair Coupon Solver — Bisection Method</h2>
+<p>The fair coupon $c^*$ is defined as the rate that makes Fair Value equal to the Target Value (typically 100%):</p>
+<div class="formula">
+$$c^* = \underset{c}{\operatorname{arg\,min}}\; \bigl|\, FV(c) - \text{Target} \,\bigr|$$
+</div>
+<p>Since $FV(c)$ is <strong>monotonically increasing</strong> in $c$ (higher coupon → higher present value), we can use the <strong>bisection (binary search) algorithm</strong>:</p>
+
+<ol>
+    <li>Set initial bounds: $c_{\text{low}} = 0.1\%$, $c_{\text{high}} = 50\%$</li>
+    <li>Verify: $FV(c_{\text{low}}) \lt \text{Target} \lt FV(c_{\text{high}})$. If not, expand or report that the target is unreachable.</li>
+    <li>Compute midpoint: $c_{\text{mid}} = \frac{c_{\text{low}} + c_{\text{high}}}{2}$</li>
+    <li>Run Monte Carlo simulation with coupon $c_{\text{mid}}$ → get $FV(c_{\text{mid}})$</li>
+    <li>If $FV(c_{\text{mid}}) \gt \text{Target}$ → coupon too high: $c_{\text{high}} = c_{\text{mid}}$</li>
+    <li>If $FV(c_{\text{mid}}) \lt \text{Target}$ → coupon too low: $c_{\text{low}} = c_{\text{mid}}$</li>
+    <li>Repeat until $|FV - \text{Target}| \lt 0.05$ or $(c_{\text{high}} - c_{\text{low}}) \lt 0.01\%$ or max 25 iterations</li>
+    <li>Return $\displaystyle \frac{c_{\text{low}} + c_{\text{high}}}{2}$ as the fair coupon</li>
+</ol>
+
+<p><strong>Convergence rate:</strong> $O\bigl(\log_2(\frac{\text{initial range}}{\text{tolerance}})\bigr)$. With range [0.1%, 50%] and 0.01% coupon precision, at most:</p>
+<div class="formula">$$\lceil \log_2(4990) \rceil \approx 13 \text{ iterations}$$</div>
+</div>
+
+<div class="card">
+<h2>7. Key Assumptions &amp; Limitations</h2>
+<ul>
+    <li><strong>Constant volatility</strong> — GBM assumes constant $\sigma$; real markets exhibit volatility clustering and regime changes.</li>
+    <li><strong>Constant correlation</strong> — correlations are computed from historical data and assumed constant; they can spike during market stress.</li>
+    <li><strong>No dividends</strong> — Yahoo Finance adjusted-close prices are used; explicit dividend yields are not modeled.</li>
+    <li><strong>No jump risk</strong> — plain GBM without Merton jump-diffusion; tail risk may be underestimated.</li>
+    <li><strong>Constant risk-free rate</strong> — yield curve effects are ignored.</li>
+    <li><strong>Daily monitoring</strong> — continuous barrier observation is approximated at daily frequency (~21 steps/month).</li>
+    <li><strong>Monte Carlo noise</strong> — sampling error $\sim O(1/\sqrt{N})$. With $N = 2000$ paths, the standard error on probability estimates is ~2 percentage points.</li>
+</ul>
+</div>
+
+<a class="back-link" href="/">← Back to Calculator</a>
+
+</div>
+</body>
+</html>
